@@ -1,0 +1,15 @@
+README for MidiRecorder
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Girish Sastry
+2010-11-20
+
+MidiRecorder is a MUI frontend and backend for use with Euterpea, the DSL for
+music in Haskell.
+
+There are two main components to MidiRecorder:
+(1) A MUI frontend, which allows for recording
+(2) A backend, which quantizes and transforms the recorded input into Euterpea
+MUSIC values.
+
+
