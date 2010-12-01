@@ -1,0 +1,12 @@
+Girish Sastry
+2010-11-01
+
+CS431 Projects
+~~~~~~~~~~~~~~
+Due December 17 2010
+
+Midi file ----> MidiEvents --fromMidi--> Music (Pitch, [NoteAttribute])
+
+recordMidi
+Codec.Midi
+
