@@ -28,7 +28,9 @@ RecMUI
 
 > recUI :: UI ()
 > recUI = title "Midi Recorder" $ topDown $
->   do	devid <- selectOutput
+>   do	mo <- selectOutput
+>	mi <- selectInput
+>	m <- midiIn mi
 >	rec <- button "RECORD"
 >	ap <- title "Absolute Pitch" $ hiSlider 1 (0,100) 0
 >	title "Pitch" $ displaySig $ pitchS ap
