@@ -3,6 +3,8 @@
 > import Euterpea.MUI
 > import Euterpea.UI
 > import qualified Codec.Midi as Midi
+> import MidiReading
+> import Data.List
 
 Functionality
 ~~~~~~~~~~~~~
