@@ -3,7 +3,7 @@
 > import Euterpea.MUI
 > import Euterpea.UI
 > import qualified Codec.Midi as Midi
-> import MidiReading
+> import MidiReader
 > import Data.List
 
 Functionality
@@ -31,8 +31,8 @@ RecMUI
 > recUI :: UI ()
 > recUI = title "Midi Recorder" $ topDown $
 >   do	mo <- selectOutput
->	mi <- selectInput
->	m <- midiIn mi
+>	mi <- selectInput	-- Select midi input (keyboard)
+>	m <- midiIn mi		--    keyboard midi input
 >	rec <- button "RECORD"
 >	ap <- title "Absolute Pitch" $ hiSlider 1 (0,100) 0
 >	title "Pitch" $ displaySig $ pitchS ap
