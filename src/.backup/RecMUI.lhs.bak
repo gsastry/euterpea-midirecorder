@@ -58,14 +58,6 @@ RecMUI
 > metroFilter (ms@(m:_),i) =
 >   if i then ms else []
 
-
-case m of
-	Std (Midi.NoteOn c k v) -> ms
-	Std (Midi.NoteOff c k v) -> 
-	    if i then ms else []
-	ANote c k v t ->
-	    if i then [ANote c k v t] else []
-
 > recUI :: UI ()
 > recUI = title "Midi Recorder" $ topDown $
 >   do	mo <- selectOutput

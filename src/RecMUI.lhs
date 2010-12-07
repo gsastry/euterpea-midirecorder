@@ -65,6 +65,8 @@ RecMUI
 >	m <- midiIn mi		--    keyboard midi input
 >	t <- time
 >	rec <- button "RECORD"
+>	sav <- button "SAVE"
+>	pb <- button "PLAYBACK"
 >	c <- checkbox "Metronome On/Off" True
 >	f <- title "Frequency" $ withDisplay $ hSlider (1,10) 1
 >	let mss = accum' [[]] m	-- Signal [[MidiMessage]
