@@ -28,6 +28,14 @@ Tests
 RecMUI
 ~~~~~~
 
+> accum' :: [[a]] -> EventS [a] -> Signal [[a]]
+> accum' i (Signal e) = Signal (i : f' i e)
+
+> f' :: [[a]] -> [Maybe [a]] -> [[[a]]]
+> f' i (x:xs) = case x of 
+>   Just y -> i : (f' (y:i) xs)
+>   Nothing -> i : f' i xs
+
 > recUI :: UI ()
 > recUI = title "Midi Recorder" $ topDown $
 >   do	mo <- selectOutput

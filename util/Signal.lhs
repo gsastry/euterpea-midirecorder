@@ -1,0 +1,185 @@
+Stream-based implementation for Singals and Events
+
+> module Euterpea.UI.Signal where
+> import Control.Applicative
+
+Signals are represented as streams.
+
+> newtype Signal a = Signal { unS :: [a] }
+
+Event streams are represented by Maybe type.
+
+> type EventS a = Signal (Maybe a)
+
+Signals are of Functor and Applicative class.
+
+> instance Functor Signal where
+>   fmap f (Signal l) = Signal (fmap f l)
+
+> instance Applicative Signal where
+>   pure x = Signal s where s = x : s
+>   (Signal (f:fs)) <*> (Signal (x:xs)) = initS  (f x) (Signal fs <*> Signal xs)
+
+Signal functions
+================
+
+> constant, lift0 :: a -> Signal a
+> constant = pure
+> lift0 = pure
+
+> lift,lift1 :: (a -> b) -> Signal a -> Signal b
+> lift = fmap 
+> lift1 = lift
+
+> lift2 :: (a -> b -> c) -> Signal a -> Signal b -> Signal c
+> lift2 f x y = (pure f <*> x) <*> y
+> lift3 :: (a -> b -> c -> d) -> Signal a -> Signal b -> Signal c -> Signal d
+> lift3 f x y z = ((pure f <*> x) <*> y) <*> z
+
+> zipS, join :: Signal a -> Signal b -> Signal (a,b)
+> zipS = lift2 (,)
+> join = zipS
+
+> unzipS, split :: Signal (a, b) -> (Signal a, Signal b)
+> unzipS (Signal s) = let t = unzip s in (Signal (fst t), Signal (snd t))
+>   where 
+>     unzip (x:xs) = (fst x : us, snd x : vs) where (us, vs) = unzip xs
+> split = unzipS
+
+> fstS :: Signal (a, b) -> Signal a
+> fstS = lift fst
+> sndS :: Signal (a, b) -> Signal b
+> sndS = lift snd
+
+> initS,delay :: a -> Signal a -> Signal a
+> initS x (Signal xs) = Signal (x : xs)
+> delay = initS
+> initS' x (Signal xs) = Signal (x : tail xs)
+
+
+> instance Show (Signal a) where
+>   show _ = "<< signal >>"
+> instance Eq (Signal a) where
+>   x == y = error "can't compare signals"
+
+> instance Num a => Num (Signal a) where
+>   (+) = lift2 (+)
+>   (*) = lift2 (*)
+>   negate = lift negate
+>   abs = lift abs
+>   signum = lift signum
+>   fromInteger = pure . fromInteger
+
+> instance Fractional a => Fractional (Signal a) where
+>   (/) = lift2 (/)
+>   fromRational = pure . fromRational
+
+> instance Floating a => Floating (Signal a) where
+>   pi    = pure pi
+>   sqrt  = lift sqrt
+>   exp   = lift exp
+>   log   = lift log
+>   sin   = lift sin
+>   cos   = lift cos
+>   tan   = lift tan
+>   asin  = lift asin
+>   acos  = lift acos
+>   atan  = lift atan
+>   sinh  = lift sinh
+>   cosh  = lift cosh
+>   tanh  = lift tanh
+>   asinh = lift asinh
+>   acosh = lift acosh
+>   atanh = lift atanh
+
+Event Functions
+===============
+
+> edge (Signal l) = Signal (aux False l)
+>   where
+>     aux False (True:xs) = Just () : aux True xs
+>     aux _ (x:xs) = Nothing : aux x xs 
+
+> (>*),(<*) :: Ord a => Signal a -> Signal a -> Signal Bool
+> (>*) = lift2 (>)
+> (<*) = lift2 (<)
+> (==*) :: Eq a => Signal a -> Signal a -> Signal Bool
+> (==*) = lift2 (==)
+> (/=*) :: Eq a => Signal a -> Signal a -> Signal Bool
+> (/=*) = lift2 (/=)
+> (>=*),(<=*) :: (Eq a, Ord a) => Signal a -> Signal a -> Signal Bool
+> (<=*) = lift2 (<=)
+> (>=*) = lift2 (>=)
+
+
+> (&&*),(||*) :: Signal Bool -> Signal Bool -> Signal Bool
+> (&&*) = lift2 (&&)
+> (||*) = lift2 (||)
+> notS = lift1 not
+
+> switch, untilS :: Signal a -> EventS (Signal a) -> Signal a
+> Signal x `switch` Signal e = Signal (loop e x)
+>   where 
+>     loop ~(e:es) ~(x:xs) = x : maybe (loop es xs) ((loop es) . unS) e
+> Signal x `untilS` Signal e = Signal (loop e x)
+>   where 
+>     loop ~(e:es) ~(x:xs) = x : maybe (loop es xs) unS e
+
+> (=>>) :: EventS a -> (a -> b) -> EventS b
+> (=>>) s f = fmap (fmap f) s
+
+> e ->> v = e =>> \_ -> v
+
+> when :: Signal Bool -> EventS ()
+> when x = unique x ->> () 
+
+> unique :: Eq a => Signal a -> EventS a
+> unique x = lift2 aux x (initS Nothing (fmap Just x))
+>   where
+>     aux x y | Just x == y = Nothing
+>             | otherwise   = Just x
+
+> integral :: Signal Double -> Signal Double -> Signal Double
+> integral t x = i
+>   where
+>     i = initS 0 (lift3 aux dt x i)
+>     dt = initS' 0 (lift2 (-) t (initS 0 t))
+>     aux dt x i = i + dt * x
+
+> (.|.) ::  EventS a ->  EventS a ->  EventS a 
+> (.|.) = lift2 aux
+>   where
+>     aux Nothing y = y
+>     aux x       _ = x 
+
+> snapshot :: EventS a -> Signal b -> EventS (a, b)
+> snapshot = lift2 aux
+>   where
+>     aux Nothing y = Nothing
+>     aux (Just x) y = Just (x, y)
+
+> snapshot_ e b = e `snapshot` b =>> snd
+
+> step, hold :: a -> EventS a -> Signal a
+> hold i (Signal e) = Signal (f i e)
+>   where
+>     f i (x:xs) = case x of
+>       Just y  -> y : f y xs
+>       Nothing -> i : f i xs
+> step = hold
+
+> stepAccum,accum :: a -> EventS (a -> a) -> Signal a
+> accum i (Signal e) = Signal (i : f i e)
+>   where
+>     f i (x:xs) = let i' = maybe i ($i) x
+>                   in i' : f i' xs
+> stepAccum = accum
+
+> accum' :: [[a]] -> EventS [a] -> Signal [[a]]
+> accum' i (Signal e) = Signal (i : f' i e)
+
+> f' :: [[a]] -> [Maybe [a]] -> [[[a]]]
+> f' i (x:xs) = case x of 
+>   Just y -> i : (f' (y:i) xs)
+>   Nothing -> i : f' i xs
+
