@@ -48,33 +48,63 @@ RecMUI
 > peg (y,[]) = []
 > peg (y,(p:ps)) = (y,p) : peg (y,ps)
 
- toMessage :: (Time, MidiMessage) -> [(Ticks, Midi.Message)]
- toMessage (t,m) = 
-   case m of
-	Std m -> m
-	ANote c k v d -> do
+> pegS :: Signal (a, [b]) -> Signal [(a,b)]
+> pegS = lift1 peg
+
+> toMessageS :: Signal (Time, MidiMessage) -> Signal (Midi.Ticks, Midi.Message)
+> toMessageS = lift1 toMessage
+
+> toMessage :: (Time, MidiMessage) -> (Midi.Ticks, Midi.Message)
+> toMessage (t,m) = 
+>   case m of
+>	Std m -> (fromEnum t `div` 2, m)
+>	_ -> error "ANote when expected Std NoteOn/NoteOff"
+
+> lstToMsgS :: Signal [(Time, MidiMessage)] -> Signal [(Midi.Ticks,Midi.Message)]
+> lstToMsgS = lift1 (map toMessage)
 	    
 > metroFilter :: ([MidiMessage], Bool) -> [MidiMessage]
 > metroFilter (ms@(m:_),i) =
 >   if i then ms else []
 
+> encase :: a -> [a]
+> encase l = [l]
+
+> encaseS :: Signal a -> Signal [a]
+> encaseS = lift1 encase
+
+> simplifyTrackS :: Signal [(Midi.Ticks, Midi.Message)] -> Signal [SEvent]
+> simplifyTrackS = lift1 (simplifyTrack 0)
+
+> eventsToMusicS :: Signal [[SEvent]] -> Signal (Music (Pitch, Volume))
+> eventsToMusicS = lift1 eventsToMusic
+
 > recUI :: UI ()
-> recUI = title "Midi Recorder" $ topDown $
->   do	mo <- selectOutput
->	mi <- selectInput	-- Select midi input (keyboard)
+> recUI = leftRight $
+>   do	(mi,mo) <- topDown $
+>	    do  mi <- selectInput
+>	        mo <- selectOutput
+>	        return (mi,mo)
 >	m <- midiIn mi		--    keyboard midi input
 >	t <- time
->	rec <- button "RECORD"
->	c <- checkbox "Metronome On/Off" True
->	f <- title "Frequency" $ withDisplay $ hSlider (1,10) 1
->	let mss = accum' [[]] m	-- Signal [[MidiMessage]
->	-- ts = accum ...	-- Signal [Int]
->	    ts = takeS (lengthS mss) $ lift0 (repeat 1)
->	    mts = distributeS $ zipS ts mss
+>	(rec,sav,pb) <- topDown $
+>	    do	rec <- button "RECORD"
+>		sav <- button "SAVE AS MIDI"
+>		pb <- button "PLAYBACK"
+>		return (rec,sav,pb)
+>	(c,f) <- topDown $
+>	    do	c <- checkbox "Metronome On/Off" True
+>		f <- title "Frequency" $ withDisplay $ hSlider (1,10) 1
+>		return (c,f)
+>	let mss = accum' [[]] m	-- Signal [[MidiMessage]]
+>	    mts = lstToMsgS (distributeS $ pegS $ join t mss)
+>	    sts = encaseS $ simplifyTrackS mts  -- Signal [[SEvent]]
+>	    musics = eventsToMusicS sts		-- Signal (Music (P,V))
+>	    -- ns3 = snapshot_ (edge pb) musics =>> 
 >	    mticks = timer t (1.0/f)
 >	    aptick = lift0 57	    -- tick at (A,4)
 >	    ns1 = snapshot_ mticks aptick =>> \k -> [ANote 0 k 100 0.1]
 >	    ns2 = snapshot ns1 c =>> metroFilter
 >	midiOut mo ns2
 
-> recMUI = runUIEx (300,300) "Midi Recorder" recUI
+> recMUI = runUIEx (800,200) "Midi Recorder" recUI
