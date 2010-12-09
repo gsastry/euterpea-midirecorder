@@ -50,6 +50,7 @@ module Euterpea.UI
   , delayt            -- :: Signal Time -> Signal Double -> EventS a -> EventS a
   , midiIn            -- :: Signal DeviceID -> UI (EventS [MidiMessage])
   , midiOut           -- :: Signal DeviceID -> EventS [MidiMessage] -> UI ()
+  , playOut	      -- :: Signal DeviceID -> EventS Midi -> UI ()
   , selectInput, selectOutput    -- :: UI (Signal DeviceID)
   ) where
 
