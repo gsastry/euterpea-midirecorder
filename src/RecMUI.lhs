@@ -98,6 +98,9 @@ The following are utility functions used in the MUI:
 > eventsToMusicS :: Signal [[SEvent]] -> Signal (Music (Pitch, Volume))
 > eventsToMusicS = lift1 eventsToMusic
 
+> musicToMidiS :: Signal (Music (Pitch, Volume)) -> Signal (Midi.Midi)
+> musicToMidiS = lift1 testMidi
+
 > recUI :: UI ()
 > recUI = leftRight $
 >   do	(mi,mo) <- topDown $
@@ -112,18 +115,24 @@ The following are utility functions used in the MUI:
 >		pb <- button "PLAYBACK"
 >		return (rec,sav,pb)
 >	(c,f) <- topDown $
->	    do	c <- checkbox "Metronome On/Off" True
+>	    do	c <- checkbox "Metronome" True
 >		f <- title "Frequency" $ withDisplay $ hSlider (1,10) 1
 >		return (c,f)
 >	let mss = accum' [[]] m	-- Signal [[MidiMessage]]
 >	    mts = lstToMsgS (distributeS $ pegS $ join t mss)
 >	    sts = encaseS $ simplifyTrackS mts  -- Signal [[SEvent]]
 >	    musics = eventsToMusicS sts		-- Signal (Music (P,V))
+>	    midis = musicToMidiS musics		-- Signal (Midi.Midi)
+>	    midis' = unique midis =>> (\mid -> mid) -- EventS (Midi.Midi)
+>	    midi_out = playOut mo midis'
 >	    -- ns3 = snapshot_ (edge pb) musics =>> 
+>	    ------- Metronome functions ----------
 >	    mticks = timer t (1.0/f)
 >	    aptick = lift0 57	    -- tick at (A,4)
 >	    ns1 = snapshot_ mticks aptick =>> \k -> [ANote 0 k 100 0.1]
 >	    ns2 = snapshot ns1 c =>> metroFilter
->	midiOut mo ns2
+>	    metro_out = midiOut mo ns2
+>	    --------------------------------------
+>	metro_out >> midi_out
 
 > recMUI = runUIEx (800,200) "Midi Recorder" recUI

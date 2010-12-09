@@ -1,0 +1,451 @@
+A simple Graphical User Interface based on FRP. It uses the SOE
+graphics library, and draws custom widgets on the screen.
+
+SOE graphics uses OpenGL as the primitive drawing routine, and
+GLFW library to provide window and input support.
+
+The monadic UI concept is borrowed from Phooey by Conal Elliott.
+
+> {-# LANGUAGE RecursiveDo #-}
+
+> module Euterpea.UI.Widget where
+
+> import Euterpea.UI.Signal
+> import Euterpea.UI.UIMonad
+> import Euterpea.UI.SOE hiding (Event)
+> import qualified Euterpea.UI.SOE as SOE
+> import System.IO
+> import System.IO.Unsafe (unsafePerformIO)
+> import Control.Monad.Fix
+> import Control.Applicative
+> import Euterpea.MidiIO
+> import Sound.PortMidi hiding (time)
+> import Codec.Midi
+
+Modified by:
+Girish Sastry
+2010-12-09
+
+added playOut function from Donya Quick
+
+
+UI Widget
+=========
+
+Default padding between border and content
+
+> padding = 3 
+
+Introduce a shorthand for overGraphic
+
+> (//) = overGraphic
+
+Text Label. Labels are always left aligned and vertically centered.
+
+> label :: String -> UI ()
+> label s = UI aux
+>   where
+>     (minw, minh) = (length s * 8 + padding * 2, 16 + padding * 2)
+>     d = Layout 0 0 minw minh minw minh
+>     drawit ((x, y), (w, h)) = withColor Black $ 
+>       text (x + padding, y + padding) s
+>     aux ctx inp = (out, (d, ()))
+>       where 
+>         out = fmap (\(evt, sys) -> ((drawit bbx, return ()), sys)) inp
+>         bbx = computeBBX ctx d
+
+A helper function to make stateful UIs easier to write.
+
+> mkUI :: s ->                                          -- initial state
+>         Layout ->                                     -- layout
+>         (Rect -> s -> Graphic) ->                     -- drawing routine
+>         (s -> IO ()) ->                               -- sound routine
+>         (a -> Signal s -> Signal s1) ->               -- input injection
+>         (CTX -> (s1, (Input, Sys)) -> (s2, Sys)) ->   -- computation
+>         (Signal s2 -> (b, Signal s)) ->               -- output projection
+>         a -> UI b
+> mkUI i layout draw buzz inj comp prj x = UI aux0
+>   where
+>     aux0 ctx inp = 
+>       let s = initS i s'
+>           s1 = inj x s
+>           (s2, sys) = unzipS (fmap (comp ctx) (zipS s1 inp))
+>           (y, s') = prj s2
+>           action = fmap (draw bbx `cross` buzz) s'
+>           bbx = computeBBX ctx layout
+>       in (zipS action sys, (layout, y))
+
+> dup x = (x, x)
+> markDirty sys d = sys { dirty = dirty sys || d }
+
+Display is an output widget showing the instantaneous value of
+a signal of strings.
+
+> display :: Signal String -> UI ()
+> display s = mkUI "" d draw (const nullSound) zipS 
+>   (\_ ((v, v'), (_, sys)) -> (v, markDirty sys (v /= v')))
+>   (\s -> ((), s)) s 
+>   where
+>     minh = 16 + padding * 2
+>     d = Layout 1 0 0 minh 8 minh
+>     draw b@(p@(x,y), (w, h)) s = 
+>       let n = (w - padding * 2) `div` 8
+>       in withColor Black (text (x + padding, y + padding) (take n s)) // 
+>          (box pushed b) // (withColor White $ block b) 
+
+Button is an input widget with a state of being on or off,
+it also shows a static text label.
+
+> button :: String -> UI (Signal Bool)
+> button label = 
+>   mkUI False d draw (const nullSound) (const id)
+>        process dup (constant ())
+>   where
+>     (tw, th) = (8 * length label, 16) 
+>     (minw, minh) = (tw + padding * 2, th + padding * 2)
+>     d = Layout 1 0 0 minh minw minh 
+>     draw b@((x,y), (w,h)) down = 
+>       let x' = x + (w - tw) `div` 2 + if down then 0 else -1
+>           y' = y + (h - th) `div` 2 + if down then 0 else -1
+>       in (withColor Black $ text (x', y') label) // 
+>          (box (if down then pushed else popped) b)
+>     process ctx (s, (evt, sys)) = (s', markDirty sys' (s /= s'))
+>       where 
+>         (s', sys') = case evt of
+>           UIEvent (Button pt True down) -> case (focused, s, down) of
+>             (True, False, True) -> (True, sys)
+>             (True, True, False) -> (False, sys)
+>             _ -> (s, sys)
+>           UIEvent (MouseMove pt) -> if pt `inside` bbx 
+>             then (s, if focused then sys else sys { nextFocus = Just myid })
+>             else (False, if focused then sys { focus = Nothing } else sys)
+>           _ -> (s, sys) 
+>           where
+>             bbx = computeBBX ctx d
+>             myid = uid ctx 
+>             focused = focus sys == Just myid
+
+We'll build both checkboxes and radio buttons by a more primitive
+widget called toggle. It displays on/off according to its input, 
+and mouse click will make the output True, otherwise the output 
+remains False.
+
+> toggle init layout draw = 
+>   mkUI init layout draw (const nullSound) zipS process unzipS
+>   where
+>     process ctx ((s,s'), (evt, sys)) = ((on,s), markDirty sys' (s /= s'))
+>       where 
+>         (on, sys') = case evt of
+>           UIEvent (Button pt True down) | pt `inside` bbx -> (down, sys)
+>           _ -> (False, sys) 
+>           where
+>             bbx = computeBBX ctx layout
+
+Checkbox allows selection or deselection of an item.
+
+> checkbox :: String -> Bool -> UI (Signal Bool)
+> checkbox label state = mdo
+>   let v = accum state (edge s ->> not)
+>   s <- toggle state d draw v
+>   return v
+>   where
+>     (tw, th) = (8 * length label, 16) 
+>     (minw, minh) = (tw + padding * 2, th + padding * 2)
+>     d = Layout 1 0 0 minh minw minh
+>     draw ((x,y), (w,h)) down = 
+>       let x' = x + padding + 16 
+>           y' = y + (h - th) `div` 2
+>           b = ((x + padding + 2, y + h `div` 2 - 6), (12, 12))
+>       in (withColor Black $ text (x', y') label) // 
+>          (if down 
+>             then withColor' gray3 (polyline 
+>               [(x + padding + 5, y + h `div` 2),
+>                (x + padding + 7, y + h `div` 2 + 3),
+>                (x + padding + 11, y + h `div` 2 - 2)])
+>             else nullGraphic) //
+>       box pushed b // (withColor White $ block b)
+
+Radio button presents a list of choices and only one of them can
+be selected at a time.
+
+> radio :: [String] -> Int -> UI (Signal Int)
+> radio labels i = 
+>   mfix (\s -> aux 0 labels s >>= return . (accum i) . (=>> const))
+>   where
+>     aux j [] s = return (constant Nothing) 
+>     aux j (l:labels) s = do
+>       u <- toggle (i == j) d draw (fmap (\i -> i == j) s)
+>       v <- aux (j + 1) labels s
+>       return ((edge u ->> j) .|. v)
+>       where
+>         (tw, th) = (8 * length l, 16) 
+>         (minw, minh) = (tw + padding * 2, th + padding * 2)
+>         d = Layout 1 0 0 minh minw minh
+>         draw ((x,y), (w,h)) down = 
+>           let x' = x + padding + 16 
+>               y' = y + (h - th) `div` 2
+>           in (withColor Black $ text (x', y') l) // 
+>              (if down then withColor' gray3 $ arc (x + padding + 5, y + padding + 6) 
+>                                            (x + padding + 9, y + padding + 10) 0 360
+>                       else nullGraphic) //
+>              (withColor' gray3 $ arc (x + padding + 2, y + padding + 3) 
+>                                      (x + padding + 12, y + padding + 13) 0 360) //
+>              (withColor' gray0 $ arc (x + padding + 2, y + padding + 3) 
+>                                      (x + padding + 13, y + padding + 14) 0 360)
+ 
+Title frames a UI by borders, and displays a static title text.
+
+> title :: String -> UI a -> UI a
+> title label (UI f) = UI aux
+>   where
+>     (tw, th) = (length label * 8, 16)
+>     drawit ((x, y), (w, h)) g = 
+>       withColor Black (text (x + 10, y) label) //
+>       (withColor' bg $ block ((x + 8, y), (tw + 4, th))) //
+>       box marked ((x, y + 8), (w, h - 16)) // g
+>     aux ctx@(CTX _ bbx@((x,y), (w,h)) myid m) inp = 
+>       let (z, (l, v)) = f (CTX TopDown ((x + 4, y + 20), (w - 8, h - 32))
+>                                (pushWidgetID myid) m) inp 
+>           (action, sys) = unzipS z 
+>           d = l { hFixed = hFixed l + 8, vFixed = vFixed l + 36, 
+>                   minW = max (tw + 20) (minW l), minH = max 36 (minH l) }
+>       in (zipS (pure (\(g, s) -> (drawit bbx g, s)) <*> action) sys,
+>           (d, v))
+
+Sliders is an input widget that allows user to choose a (continuous)
+value within a given range. 
+
+> hSlider, vSlider :: RealFrac a => (a, a) -> a -> UI (Signal a)
+> hSlider = slider True
+> vSlider = slider False
+
+> slider :: RealFrac a => Bool -> (a, a) -> a -> UI (Signal a)
+> slider hori (min, max) = mkSlider hori v2p p2v jump
+>   where
+>     v2p v w = truncate ((v - min) / (max - min) * fromIntegral w)
+>     p2v p w =  
+>       let v = min + (fromIntegral (p - padding) / fromIntegral w * (max - min))
+>       in if v < min then min else if v > max then max else v
+>     jump d w v = 
+>       let v' = v + fromIntegral d * (max - min) * 16 / fromIntegral w
+>       in if v' < min then min else if v' > max then max else v'
+
+Integer slider behaves like a normal slider but will only allow selection
+of discrete values separated by a step-size.
+
+> hiSlider, viSlider :: Integral a => a -> (a, a) -> a -> UI (Signal a)
+> hiSlider = iSlider True
+> viSlider = iSlider False
+
+> iSlider hori step (min, max) = mkSlider hori v2p p2v jump
+>   where
+>     v2p v w = w * fromIntegral (v - min) `div` fromIntegral (max - min)
+>     p2v p w =  
+>       let v = min + fromIntegral (round (fromIntegral (max - min) * 
+>               fromIntegral (p - padding) / fromIntegral w))
+>       in if v < min then min else if v > max then max else v
+>     jump d w v = 
+>       let v' = v + step * fromIntegral d 
+>       in if v' < min then min else if v' > max then max else v'
+
+> mkSlider :: Eq a => Bool -> (a -> Int -> Int) -> 
+>             (Int -> Int -> a) -> 
+>             (Int -> Int -> a -> a) -> 
+>             a -> UI (Signal a)
+> mkSlider hori val2pos pos2val jump val0 = 
+>   mkUI (val0, Nothing) d draw (const nullSound) (const id)
+>        process (\s -> (fstS s, s)) (constant ())  
+>   where
+>     rotP p@(x,y) ((bx,by),_) = if hori then p else (bx + y - by, by + x - bx)
+>     rotR r@(p@(x,y),(w,h)) bbx = if hori then r else (rotP p bbx, (h,w))
+>     (minw, minh) = (16 + padding * 2, 16 + padding * 2)
+>     (tw, th) = (16, 8)
+>     d = if hori then Layout 1 0 0 minh minw minh
+>                 else Layout 0 1 minh 0 minh minw
+>     val2pt val ((bx,by), (bw,bh)) = 
+>       let p = val2pos val (bw - padding * 2 - tw)
+>       in (bx + p + padding, by + 8 - th `div` 2 + padding) 
+>     bar ((x,y),(w,h)) = ((x + padding + tw `div` 2, y + 6 + padding), 
+>                          (w - tw - padding * 2, 4))
+>     draw b@((x,y), (w, h)) (val, _) = 
+>       let p@(mx,my) = val2pt val (rotR b b)
+>       in box popped (rotR (p, (tw, th)) b)
+>          // (withColor' bg $ block $ rotR ((mx + 2, my + 2), (tw - 4, th - 4)) b)
+>          // (box pushed $ rotR (bar (rotR b b)) b)
+>     process ctx ((val, s), (evt, sys)) = ((val', s'), markDirty sys' (val /= val'))
+>       where
+>         ((val', s'), sys') = case evt of
+>           UIEvent (Button pt' True down) -> let pt = rotP pt' bbx in
+>             case (pt `inside` target, down) of
+>               (True, True) -> ((val, Just (ptDiff pt val)), 
+>                                if focused then sys else sys { nextFocus = Just myid })
+>               (_, False)   -> ((val, Nothing), 
+>                                if focused then sys { focus = Nothing } else sys)
+>               (False, True) | pt `inside` bar' -> clickonbar pt
+>               _ -> ((val, s), sys) 
+>           UIEvent (MouseMove pt') -> let pt = rotP pt' bbx in
+>             case s of
+>               Just pd -> ((pt2val pd pt, Just pd), sys)
+>               Nothing -> ((val, s), sys)
+>           _ -> ((val, s), sys) 
+>         bbx@((bx,by),(bw,bh)) = let b = computeBBX ctx d in rotR b b
+>         bar' = let ((x,y),(w,h)) = bar bbx in ((x,y-4),(w,h+8))
+>         myid = uid ctx 
+>         focused = focus sys == Just myid
+>         target = (val2pt val bbx, (tw, th)) 
+>         ptDiff (x, y) val = 
+>           let (x', y') = val2pt val bbx
+>           in (x' + tw `div` 2 - x, y' + th `div` 2 - x)
+>         pt2val (dx, dy) (x,y) = pos2val (x + dx - bx - tw `div` 2) (bw - 2 * padding - tw)
+>         clickonbar pt@(x',y') = 
+>           let (x,y) = val2pt val bbx
+>               val' = jump (if x' < x then -1 else 1) bw val
+>           in ((val', s), sys)
+
+Canvas displays any graphics. The input is a signal of graphics
+event because we only want to redraw the screen when the input
+is there.
+
+> canvas :: Dimension -> EventS Graphic -> UI ()
+> canvas (w, h) = mkUI nullGraphic layout draw (const nullSound)
+>                 zipS process (\s -> ((), s)) 
+>   where
+>     layout = Layout 1 1 w h w h
+>     draw ((x,y),(w,h)) = translateGraphic (x,y)
+>     process ctx ((u, g), (_, sys)) = case u of
+>       Just g' -> (g', markDirty sys True)
+>       Nothing -> (g, sys)
+ 
+Time itself can be obtained from an input Widget.
+
+> time :: UI (Signal Time)
+> time = mkUI 0 nullLayout (\_ _ -> nullGraphic) (\_ -> nullSound)
+>             (const id) process dup (constant ())
+>   where
+>     process _ (t, (inp, sys)) =
+>       case inp of
+>         Timer t' -> (t', sys)
+>         _ -> (t, sys)
+
+A variable duration timer
+
+> timer :: Signal Time -> Signal Double -> EventS ()
+> timer ts is = es
+>   where
+>     (es,st) = split $ lift3 f ts is (initS 0 st)
+>     f now ival last = if now - last >= ival
+>                       then (Just (), now)
+>                       else (Nothing, last)
+
+Delay by constant time.
+
+> delayt' :: Time -> Signal Time -> EventS a -> EventS a
+> delayt' d (Signal ~t@(t0:_)) (Signal e) = Signal (f t)
+>   where 
+>     f ~(t:ts) = if t - t0 >= d then e else Nothing : f ts
+
+Delay by variable time. 
+
+> delayt :: Signal Time -> Signal Double -> EventS a -> EventS a
+> delayt (Signal ts) (Signal ds) (Signal es) = Signal (f ts ds es [])
+>   where
+>     f ~(t:ts) ~(d:ds) ~(e:es) q = 
+>       case q of 
+>         []       -> Nothing : f ts ds es (g q t e)
+>         (t0,e0):qs -> 
+>           if t - t0 >= d
+>           then Just e0 : f ts ds es (g qs t e)
+>           else Nothing : f ts ds es (g q t e)
+>     g qs t = maybe qs (\e' -> qs ++ [(t,e')])
+
+
+> midiIn :: Signal DeviceID -> UI (EventS [MidiMessage])
+> midiIn dev = UI aux 
+>   where 
+>     aux ctx inp = (out (zipS dev inp), (nullLayout, sig (zipS dev inp)))
+>       where 
+>         sig = lift (\(d,(i,s)) -> case i of
+>                                 MidiEvent dev m -> if dev == d
+>                                                    then Just [Std m]
+>                                                    else Nothing
+>                                 _ -> Nothing)
+>         out = lift (\(d,(i,s)) -> ((nullGraphic, act d), s))
+>         act d = do
+>           valid <- isValidInputDevice d
+>           if valid 
+>             then pollMidi d (cb d)
+>             else return ()
+>         cb d (t, m) = inject ctx (MidiEvent d m)
+ 
+> midiOut :: Signal DeviceID -> EventS [MidiMessage] -> UI ()
+> midiOut dev msig = UI aux
+>   where
+>     aux ctx inp = (out <*> dev <*> msig <*> inp, (nullLayout, ()))
+>       where
+>         out = pure (\d mmsg (ievt,s) -> ((nullGraphic, act d mmsg),s))
+>         act d mmsg = do
+>           valid <- isValidOutputDevice d 
+>           if valid
+>             then
+>               case mmsg of
+>                 Just msgs -> tryOutputMidi d >>
+>                              mapM_ (\m -> outputMidi d (0, m)) msgs
+>                 Nothing   -> tryOutputMidi d
+>             else return ()
+
+> playOut :: Signal DeviceID -> EventS Midi -> UI ()
+> playOut devid msig = UI aux
+>   where 
+>	aux ctx inp = (out <*> devid <*> msig <*> inp, (nullLayout,()))
+>	    where
+>		out = pure (\d mmsg (ievt,s) -> ((nullGraphic,act d mmsg),s))
+>		act d mmsg = do
+>		    valid <- isValidOutputDevice d
+>		    if valid then 
+>			case mmsg of
+>			    Just m -> playMidi d m
+>			    Nothing -> return ()
+>			else print "Invalid Device ID!"
+
+> selectInput :: UI (Signal DeviceID)
+> selectInput = selectDev "Input device" input
+> selectOutput = selectDev "Output device" output
+
+> selectDev :: String -> (DeviceInfo -> Bool) -> UI (Signal DeviceID)
+> selectDev t f = title t $ do
+>   r <- radio (map name $ snd $ unzip devs) defaultChoice
+>   let devId = lift1 (\i -> if i == -1 then i else fst (devs !! i)) r
+>   --display (lift1 show devId)
+>   return devId
+>       where devs = filter (\(i,d) -> f d && name d /= "Microsoft MIDI Mapper") $ 
+>                      zip [0..] $ unsafePerformIO getAllDeviceInfo
+>             defaultChoice = if null devs then (-1) else 0
+
+
+UI colors and drawing routine
+=============================
+
+> bg = rgb 0xec 0xe9 0xd8
+> gray0 = rgb 0xff 0xff 0xff
+> gray1 = rgb 0xf1 0xef 0xe2
+> gray2 = rgb 0xac 0xa8 0x99
+> gray3 = rgb 0x71 0x6f 0x64
+> blue3 = rgb 0x31 0x3c 0x79
+
+> box [] ((x, y), (w, h)) = nullGraphic 
+> box ((t, b):cs) ((x, y), (w, h)) = 
+>   box cs ((x + 1, y + 1), (w - 2, h - 2)) // 
+>   withColor' t (line (x, y) (x, y + h - 1) //
+>                 line (x, y) (x + w - 2, y)) //
+>   withColor' b (line (x + 1, y + h - 1) (x + w - 1, y + h - 1) //
+>                 line (x + w - 1, y) (x + w - 1, y + h - 1))
+
+> block ((x,y), (w, h)) = polygon [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+>
+> pushed = (gray2, gray0) : (gray3, gray1) : []
+> popped = (gray1, gray3) : (gray0, gray2) : []
+> marked = (gray2, gray0) : (gray0, gray2) : []
+
+> inside (u, v) ((x, y), (w, h)) = u >= x && v >= y && u < x + w && v < y + h
+
+
