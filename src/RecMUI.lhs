@@ -12,7 +12,7 @@ RecMUI is a basic MUI that provides the following features:
 (1) Recording/saving keyboard Midi input
 (2) Playback of midi input
 (3) Transpositions
-(4) A quantizer that aligns to nearest 32nd note to account for human error
+(4) ScaleVolume/reverse/ musical options
 (5) Metronome
 
 Notes
@@ -27,6 +27,25 @@ Tests
 
 RecMUI
 ~~~~~~
+
+Music transposition functions:
+
+scaleVolume s m scales the volume of each note m by a factor of s
+
+> scaleVolume :: Rational -> Music (Pitch, Volume) -> Music (Pitch, Volume)
+> scaleVolume s m = mMap f m
+>   where f (p,v) = (p, round (s * fromIntegral v))
+
+revM goes here
+
+insideOut inverts the role of serial and parallel composition in a Music value.
+
+> insideOut :: Music a -> Music a
+> insideOut = mFold (:=:) (:+:) Prim Modify
+
+Euterpea.transpose goes here
+
+The following are utility functions used in the MUI:
 
 > takeS :: Signal Int -> Signal [a] -> Signal [a]
 > takeS = lift2 take
