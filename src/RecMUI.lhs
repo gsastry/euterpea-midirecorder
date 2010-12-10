@@ -143,6 +143,12 @@ very easy, does not seem well suited for this conversion. This became a much
 harder problem than I (and Donya) thought. As such, I really look forward
 to the Arrows implementation of the MUI functionality.
 
+Sources
+~~~~~~~
+
+Donya Quick for MidiReading/MidiDiagnostics and the accum'/playOut, and 
+also for her expertise on the subject.
+
 Tests
 ~~~~~
 

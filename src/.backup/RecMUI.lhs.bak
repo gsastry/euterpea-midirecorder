@@ -65,6 +65,24 @@ the recUI code.
 
 Strategy/Implementation
 ~~~~~~~~~~~~~~~~~~~~~~~
+A bar of music like this:
+
+-------0---------
+----0--0---------
+------------0----
+--------------0--
+----------------0
+
+Is converted into something like this in Euterpea:
+
+		:=:
+	       /  |
+	      /   |
+	     /    |
+	     :+:  :+:	    ...
+	    /  \    | \
+	rest 0  A   |  B
+		    rest qn
 
 I've defined a series of functions that facilitate the pipeline that enables
 a value to go from EventS [MidiMessage] -> Signal/EventS (Music (Pitch, Volume)).
