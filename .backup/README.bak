@@ -4,12 +4,78 @@ README for MidiRecorder
 Girish Sastry
 2010-11-20
 
-MidiRecorder is a MUI frontend and backend for use with Euterpea, the DSL for
-music in Haskell.
+MidiRecorder is a MUI frontend and backend for use with Euterpea,
+the DSL for music in Haskell.
 
 There are two main components to MidiRecorder:
 (1) A MUI frontend, which allows for recording
-(2) A backend, which quantizes and transforms the recorded input into Euterpea
-MUSIC values.
+(2) A backend, which quantizes and transforms the recorded input into Euterpea MUSIC values.
 
+To use:
+
+Drop Signal.lhs and Widget.lhs in the Euterpea/src/Signal directory.
+
+Then, expose the functions playOut and accum' in UI.hs.
+
+Report
+~~~~~~~~
+
+Introduction
+~~~~~~~~~~~~
+
+Initially, I set out to create a backend/frontend for MUI that allows for 
+conversion from midi input to a music value and vice versa. The motivation 
+for this was that there are many useful functions that operate only at the music level -- in fact, most of the Euterpea library (and the textbook) deals
+with this. However, there is no way to use this functions coherently with
+midi input -- especially at the MUI/signal level.
+
+The goals for this project have changed since it's conception. Because of
+the complexity of the MUI/signal layer, I was unable to complete the 
+transformation from Midi to Music and back. Specifically, going from Music
+back to Midi values proved to be an especially challenging problem. The 
+Music value that is written on the conversion from Midi is in one particular
+structure of a parallel composition of sequential Music values. After any
+musical transpositions (i.e. revM and insideOut), this structure may have
+changed in unknown ways. Converting this back to Midi is the next step 
+for this project.
+
+Because of this roadblock, I focused on the initial conversion from Midi
+to Music. It appears that this was successful; however, testing this proved
+to be a challenge. I attempted to add widgets to the Widget.lhs file to 
+facilitate writing the converted output to a file, using the exportFile
+function provided by the Codec.Midi library.
+
+Tutorial
+~~~~~~~~
+
+Run recMUI after loading the module RecMUI. To use the input from a radio
+button (used for testing purposes) uncomment out the block of code within
+recUI. Then, when the button "Play" is pushed, an A note will be played.
+The MUI defaults to using midi input. This widget has been tested on 
+Windows machines in the closed zoo and in the music lab. If you want to
+modify the behavior of the playOut function, it is located in Widget.lhs.
+If you want to modify the behavior of accum', it is located in Signal.lhs.
+After either modification, you must run a "cabal install" command in the
+Euterpea directory before loading the RecMUI module.
+
+I included two examples of Music level transformations (revM and insideOut),
+but it is very simple to implement your own (and this is one of the 
+motivations for this project). Simply lift the function that operates
+at the Music level for it to operate at the MUI level and incorporate it in
+the recUI code.
+
+Strategy/Implementation
+~~~~~~~~~~~~~~~~~~~~~~~
+
+There are several useful contributions/features that came out of this
+project. For example, while it was previously difficult to convert 
+from MIDI input at the MUI level to a Music value at the signal level,
+this process is now encapsulated in a few functions.
+
+Issues
+~~~~~~
+
+Currently there are problems with the playOut function -- it should be
+writing the converted midi output to a file; however, this midi file
+is currently unplayable. 
 
