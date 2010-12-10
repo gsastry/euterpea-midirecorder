@@ -11,21 +11,27 @@ There are two main components to MidiRecorder:
 (1) A MUI frontend, which allows for recording
 (2) A backend, which quantizes and transforms the recorded input into Euterpea MUSIC values.
 
-To use:
 
-Drop Signal.lhs and Widget.lhs in the Euterpea/src/Signal directory.
+This stuff is also in RecMUI.lhs!! This is only a README and contains
+a copy of the project report.
 
-Then, expose the functions playOut and accum' in UI.hs.
+Functionality
+~~~~~~~~~~~~~
+RecMUI is a basic MUI that provides the following features:
 
-Report
-~~~~~~~~
+(1) Recording/saving keyboard Midi input
+(2) Playback of midi input (TBD)
+(3) Transpositions (TBD)
+(4) ScaleVolume/reverse/ musical options
+(5) Metronome
 
 Introduction
 ~~~~~~~~~~~~
 
 Initially, I set out to create a backend/frontend for MUI that allows for 
 conversion from midi input to a music value and vice versa. The motivation 
-for this was that there are many useful functions that operate only at the music level -- in fact, most of the Euterpea library (and the textbook) deals
+for this was that there are many useful functions that operate only at the 
+music level -- in fact, most of the Euterpea library (and the textbook) deals
 with this. However, there is no way to use this functions coherently with
 midi input -- especially at the MUI/signal level.
 
@@ -48,8 +54,10 @@ function provided by the Codec.Midi library.
 Tutorial
 ~~~~~~~~
 
-Run recMUI after loading the module RecMUI. To use the input from a radio
-button (used for testing purposes) uncomment out the block of code within
+First, drop the util/Signal.lhs file in the Euterpea/UI directory and the 
+util/Widget.lhs in the Euterpea/ directory (replacing the old versions).
+Then, run recMUI after loading the module RecMUI. To use the input from a
+radio button (used for testing purposes) uncomment out the block of code within
 recUI. Then, when the button "Play" is pushed, an A note will be played.
 The MUI defaults to using midi input. This widget has been tested on 
 Windows machines in the closed zoo and in the music lab. If you want to
@@ -67,15 +75,61 @@ the recUI code.
 Strategy/Implementation
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-There are several useful contributions/features that came out of this
-project. For example, while it was previously difficult to convert 
-from MIDI input at the MUI level to a Music value at the signal level,
-this process is now encapsulated in a few functions.
+I've defined a series of functions that facilitate the pipeline that enables
+a value to go from EventS [MidiMessage] -> Signal/EventS (Music (Pitch, Volume)).
 
-Issues
-~~~~~~
+These functions are commented below. In addition, with Donya, there are two
+functions in the actual Euterpea library: playOut (Widget.lhs) and accum'
+(Signal.lhs). I have copied the comments and type signatures for them, but
+these also exist in those files in the util/ directory:
 
-Currently there are problems with the playOut function -- it should be
-writing the converted midi output to a file; however, this midi file
-is currently unplayable. 
+playOut is a function defined by Donya Quick and modified by Girish Sastry. It
+mimics midiOut to allow a Haskell Midi "object" to be played at the UI () level.
+Within it, we can utilize the IO () monad to include functions for I/O, such as
+exportFile. In fact, we can modify exportFile to any IO () function to display
+information that is occuring in the Midi stream.
 
+ playOut :: Signal DeviceID -> EventS Midi -> UI ()
+
+accum' is a version of accum that goes from [[a]] -> Signal [[a]], given
+an EventS [a]. This is a key component of the pipeline to transform 
+Midi input at the MUI level to Music values in Euterpea. It works by
+appending in real time the proper lists in the Event Stream that exist
+(are not Nothing). f' is a helper function that facilitates this.
+
+ accum' :: [[a]] -> EventS [a] -> Signal [[a]]
+ f' :: [[a]] -> [Maybe [a]] -> [[[a]]]
+
+I utilize the MidiReading module provided by Donya Quick to do some conversions
+between Midi and Music. Since the MidiReading module uses a datatype called
+SEvent (which is a simplification of a MidiMessage), we need accum' to
+get the MidiMessage input as a list of SEvents in order to continue with
+the conversion.
+
+Next, I use a variety of lifted functions to convert to a Music object
+in Euterpea. These functions are viewable below with comments on what they
+do. After this, there are musical transformations that can be used at 
+the Signal level with the use of lift.
+
+Observations/Conclusions
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+The project turned out to be a lot more difficult than originally planned, 
+which is OK, because this turns out to be an interesting research question 
+for the Euterpea language. My results with the time given are spotty -- I can
+write to a midi file, but the midi file is unreadable. My work has been largely
+behind the scenes, and hopefully someone can extend this to a nice, usable 
+implementation. Then, the possibilities are endless for Musical transformations
+with just recorded Midi.
+
+Over the course of the last two weeks, I've learned a lot about the interplay 
+of Signals/EventS/Midi and the MUI layer. I've dug through the code in the actual
+Euterpea library, seen the Midi code at the lowest level, seen the MUI code at
+the lowest level, and the Signal code at the lowest level. Because of this, I
+can also understand the design considerations that went into developing the 
+suite of MUI tools.
+
+The use of the MUI/Signal layer, which makes wiring up some graphical elements
+very easy, does not seem well suited for this conversion. This became a much
+harder problem than I (and Donya) thought. As such, I really look forward
+to the Arrows implementation of the MUI functionality.

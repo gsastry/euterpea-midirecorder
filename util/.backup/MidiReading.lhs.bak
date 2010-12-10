@@ -7,9 +7,6 @@
 > import Data.List
 > import Data.Char
 
-Girish Sastry
-2010-12-10
-
 Donya Quick
 Code developed for research purposes and adapted for CPSC 431/531 to overcome some problems exhibited by fromMidi in FromMidi.lhs.
 Last updated 02-Dec-2010.

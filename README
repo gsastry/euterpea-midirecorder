@@ -12,6 +12,9 @@ There are two main components to MidiRecorder:
 (2) A backend, which quantizes and transforms the recorded input into Euterpea MUSIC values.
 
 
+This stuff is also in RecMUI.lhs!! This is only a README and contains
+a copy of the project report.
+
 Functionality
 ~~~~~~~~~~~~~
 RecMUI is a basic MUI that provides the following features:
