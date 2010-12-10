@@ -66,6 +66,24 @@ The midiToEvents function will take a Midi structure (from importFile, for examp
 >               (ProgramChange c p) -> simplifyTrack p ts 
 >               _ -> simplifyTrack icur ts 
 
+> midiToMsg :: Midi -> [[SEvent]]
+> midiToMsg m = 
+>     let ts = map (addTrackTicks 0) (tracks m) -- obtains exact times
+>         td = timeDiv m
+>         ts' = map (simplifyTrack 0) ts  
+>     in  map (map (applyTD td)) ts' where 
+>   simplifyTrack :: Int -> [(Ticks, Message)] -> [SEvent]
+>   simplifyTrack icur [] = []
+>   simplifyTrack icur ((t,m):ts) = 
+>     case m of (NoteOn c p v) -> 
+>                 (fromIntegral t, p, v, icur, On) : 
+>                    simplifyTrack icur ts
+>               (NoteOff c p v) -> 
+>                   (fromIntegral t, p, v, icur, Off) : 
+>                    simplifyTrack icur ts
+>               (ProgramChange c p) -> simplifyTrack p ts 
+>               _ -> simplifyTrack icur ts
+
 
 The eventsToMusic function will convert a list of lists of SEvents (output from midiToEvents) to a Music(Pitch,Volume) structure. The structure may not be ideal from an analysis standpoint - all notes will be connected together using the (:=:) constructor. For example, the first line of "Frere Jaque" would actually get represented like this:
 

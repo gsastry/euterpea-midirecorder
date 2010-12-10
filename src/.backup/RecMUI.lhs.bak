@@ -10,8 +10,8 @@ Functionality
 ~~~~~~~~~~~~~
 RecMUI is a basic MUI that provides the following features:
 (1) Recording/saving keyboard Midi input
-(2) Playback of midi input
-(3) Transpositions
+(2) Playback of midi input (TBD)
+(3) Transpositions (TBD)
 (4) ScaleVolume/reverse/ musical options
 (5) Metronome
 
@@ -101,6 +101,15 @@ The following are utility functions used in the MUI:
 > musicToMidiS :: Signal (Music (Pitch, Volume)) -> Signal (Midi.Midi)
 > musicToMidiS = lift1 testMidi
 
+> pcs :: [(String, Int)]
+> pcs = [("A", 0)]
+
+> a440m :: Music Pitch
+> a440m = Prim (Note qn (A,4))
+
+> a440mS :: Signal (Music Pitch)
+> a440mS = lift0 a440m
+
 > recUI :: UI ()
 > recUI = leftRight $
 >   do	(mi,mo) <- topDown $
@@ -109,30 +118,43 @@ The following are utility functions used in the MUI:
 >	        return (mi,mo)
 >	m <- midiIn mi		--    keyboard midi input
 >	t <- time
->	(rec,sav,pb) <- topDown $
->	    do	rec <- button "RECORD"
->		sav <- button "SAVE AS MIDI"
+>	(sav,pb,x,y0,y1) <- topDown $
+>	    do	sav <- button "SAVE AS MIDI"
 >		pb <- button "PLAYBACK"
->		return (rec,sav,pb)
->	(c,f) <- topDown $
->	    do	c <- checkbox "Metronome On/Off" True
+>		x <- button "Play"
+>		y0 <- button "Reverse Music"
+>		y1 <- button "Inside Out"
+>		return (sav,pb,x,y0,y1)
+>	(c,f,p) <- topDown $
+>	    do	c <- checkbox "Metronome" True
 >		f <- title "Frequency" $ withDisplay $ hSlider (1,10) 1
->		return (c,f)
+>		p <- title "PitchClass" $ leftRight $
+>		    radio (fst $ unzip pcs) 0
+>		return (c,f,p)
 >	let mss = accum' [[]] m	-- Signal [[MidiMessage]]
 >	    mts = lstToMsgS (distributeS $ pegS $ join t mss)
 >	    sts = encaseS $ simplifyTrackS mts  -- Signal [[SEvent]]
 >	    musics = eventsToMusicS sts		-- Signal (Music (P,V))
 >	    midis = musicToMidiS musics		-- Signal (Midi.Midi)
 >	    midis' = unique midis =>> (\mid -> mid) -- EventS (Midi.Midi)
->	    midi_out = playOut mo midis'
->	    -- ns3 = snapshot_ (edge pb) musics =>> 
+>	    ns3 = snapshot_ (edge sav) midis =>> (\mid -> mid)
+>	    midi_out = playOut mo ns3
+>	    -------- Music operations -----------
+>	    y0m = snapshot_ (edge y0) musics =>> (\m -> testMidi $ revM m)
+>	    y1m = snapshot_ (edge y1) musics =>> (\m -> testMidi $ insideOut m)
+>	    midi_out_m = playOut mo (y0m .|. y1m)
+>	    --------RadioButton functions -------
+>	    rs = snapshot_ (edge x) a440mS =>> \p -> musicToMidiS
+>	    rs1 = unique midis =>> (\mid -> mid)
+>	    radio_out = playOut mo rs1
 >	    ------- Metronome functions ----------
 >	    mticks = timer t (1.0/f)
 >	    aptick = lift0 57	    -- tick at (A,4)
 >	    ns1 = snapshot_ mticks aptick =>> \k -> [ANote 0 k 100 0.1]
 >	    ns2 = snapshot ns1 c =>> metroFilter
 >	    metro_out = midiOut mo ns2
+>	    midi_out_test = midiOut mo m
 >	    --------------------------------------
->	metro_out >> midi_out
+>	metro_out >> midi_out >> midi_out_m >> radio_out
 
-> recMUI = runUIEx (800,200) "Midi Recorder" recUI
+> recMUI = runUIEx (1000,200) "Midi Recorder" recUI

@@ -49,6 +49,14 @@ The following function addresses a ticks to Music duration conversion.
 >     let t' = t / fromIntegral (fps * tpf)
 >     in  (t', p, v, i, e)
 
+> applyTD' :: TimeDiv -> (Int,Message) -> (Double, Message)
+> applyTD' (TicksPerBeat td) (t,m)= 
+>     let t' = fromIntegral t / fromIntegral (td * 4)
+>     in  (t',m)
+> applyTD' (TicksPerSecond fps tpf) (t,m) = 
+>     let t' = fromIntegral t / fromIntegral(fps * tpf)
+>     in  (t',m)
+
 
 The midiToEvents function will take a Midi structure (from importFile, for example) and convert it to a list of lists of SEvents. Each outer list represents a track in the original Midi. 
 
@@ -70,6 +78,15 @@ The midiToEvents function will take a Midi structure (from importFile, for examp
 >                  simplifyTrack icur ts
 >             (ProgramChange c p) -> simplifyTrack p ts 
 >             _ -> simplifyTrack icur ts 
+
+> midiToMsg :: Midi -> [(Double, Message)]
+> midiToMsg m = 
+>     let ts = map (addTrackTicks 0) (tracks m) -- obtains exact times
+>         td = timeDiv m
+>     in  map (applyTD' td) (concat ts) -- map (map (applyTD' td)) ts
+
+> msgToMMsg :: [(Double, Message)] -> [MidiMessage]
+> msgToMMsg [(t,m)] = [Std m]
 
 
 The eventsToMusic function will convert a list of lists of SEvents (output from midiToEvents) to a Music(Pitch,Volume) structure. The structure may not be ideal from an analysis standpoint - all notes will be connected together using the (:=:) constructor. For example, the first line of "Frere Jaque" would actually get represented like this:
